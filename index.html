@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>doom scroll</title>
+<link rel="stylesheet" href="doom/doom.css">
+</head>
+<body>
+<!-- Catches syntax errors in config.js. This has to run BEFORE config.js loads,
+     otherwise the parse error happens before anyone is listening for it. -->
+<script>
+window.__doomBootErrors = [];
+window.addEventListener('error', function (e) {
+  window.__doomBootErrors.push({ file: e.filename, line: e.lineno, message: e.message });
+});
+</script>
+
+<!-- Your piece is described entirely in config.js. Edit that file, not this one. -->
+<script src="config.js"></script>
+<script src="doom/doom.js"></script>
+</body>
+</html>

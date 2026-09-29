@@ -1,0 +1,160 @@
+/* doomScroll — layout and scroll behaviour.
+   You normally don't need to edit this file; everything is driven by config.js. */
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;              /* the .doom-track does the scrolling, not the page */
+  background: #000;
+  color: #fff;
+  font-family: system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+}
+
+/* ---------------------------------------------------------------- track --- */
+/* Fixed to the viewport so there is no mobile URL-bar resize jitter, and so the
+   same element is the scroll container in both axes. */
+.doom-track {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.doom-track::-webkit-scrollbar { display: none; }
+
+.doom-track.is-vertical   { overflow-y: auto; overflow-x: hidden; }
+.doom-track.is-horizontal { overflow-x: auto; overflow-y: hidden; display: flex; flex-direction: row; }
+
+/* carousel = one slide locks into place at a time; continuous = free scrolling */
+.doom-track.is-vertical.is-carousel   { scroll-snap-type: y mandatory; }
+.doom-track.is-horizontal.is-carousel { scroll-snap-type: x mandatory; }
+
+/* ---------------------------------------------------------------- slide --- */
+.doom-slide {
+  position: relative;
+  overflow: hidden;
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+}
+.is-vertical   > .doom-slide { width: 100%;  height: 100%; }
+.is-horizontal > .doom-slide { height: 100%; flex: 0 0 100%; }
+
+/* ---------------------------------------------------------------- layer --- */
+.doom-layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  will-change: transform, filter, opacity;
+}
+
+.doom-layer > video,
+.doom-layer > img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;             /* overridden per-layer by fit: "contain" */
+}
+.doom-layer.is-contain > video,
+.doom-layer.is-contain > img { object-fit: contain; }
+
+.doom-layer.is-audio { pointer-events: none; }
+
+/* ----------------------------------------------------------------- text --- */
+.doom-layer.is-text {
+  display: grid;
+  padding: 6vmin;
+  pointer-events: none;
+}
+.doom-text {
+  margin: 0;
+  line-height: 1.1;
+  text-wrap: balance;
+  white-space: pre-wrap;         /* so "\n" in config.js makes a line break */
+}
+
+/* pos: which corner/edge the text sits in */
+.doom-layer[data-pos="center"]      { place-items: center;         text-align: center; }
+.doom-layer[data-pos="top"]         { place-items: start center;   text-align: center; }
+.doom-layer[data-pos="bottom"]      { place-items: end center;     text-align: center; }
+.doom-layer[data-pos="left"]        { place-items: center start;   text-align: left; }
+.doom-layer[data-pos="right"]       { place-items: center end;     text-align: right; }
+.doom-layer[data-pos="topleft"]     { place-items: start;          text-align: left; }
+.doom-layer[data-pos="topright"]    { place-items: start end;      text-align: right; }
+.doom-layer[data-pos="bottomleft"]  { place-items: end start;      text-align: left; }
+.doom-layer[data-pos="bottomright"] { place-items: end;            text-align: right; }
+
+/* size presets scale with the viewport so type works on a phone and a projector */
+.doom-text[data-size="small"]  { font-size: clamp(0.9rem, 2.2vmin, 1.2rem); }
+.doom-text[data-size="medium"] { font-size: clamp(1.3rem, 4.5vmin, 2.5rem); }
+.doom-text[data-size="large"]  { font-size: clamp(2rem, 8vmin, 5rem); }
+.doom-text[data-size="huge"]   { font-size: clamp(3rem, 15vmin, 12rem); font-weight: 800; letter-spacing: -0.03em; }
+
+/* --------------------------------------------------------------- splash --- */
+/* Browsers block audio until the user interacts with the page, so this screen is
+   required. It doubles as the title card. */
+.doom-splash {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  gap: 1rem;
+  padding: 8vmin;
+  text-align: center;
+  background: #000;
+  cursor: pointer;
+  transition: opacity 600ms ease;
+}
+.doom-splash.is-leaving { opacity: 0; pointer-events: none; }
+.doom-splash-inner { display: grid; gap: 1.5rem; }
+.doom-splash-title { margin: 0; font-size: clamp(2rem, 9vmin, 6rem); font-weight: 800; letter-spacing: -0.03em; line-height: 1; }
+.doom-splash-sub   { margin: 0; font-size: clamp(0.9rem, 2.5vmin, 1.2rem); opacity: 0.6; animation: doom-pulse 2.4s ease-in-out infinite; }
+@keyframes doom-pulse { 0%, 100% { opacity: 0.35; } 50% { opacity: 0.85; } }
+
+/* ---------------------------------------------------------------- error --- */
+.doom-error {
+  position: fixed;
+  z-index: 200;
+  left: 1rem; right: 1rem; bottom: 1rem;
+  max-height: 45vh;
+  overflow: auto;
+  padding: 1rem 1.25rem;
+  border-radius: 8px;
+  border: 1px solid #ff5f56;
+  background: #2a0d0d;
+  color: #ffd9d6;
+  font: 13px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+}
+.doom-error h2 { margin: 0 0 0.5rem; font-size: 13px; text-transform: uppercase; letter-spacing: 0.1em; color: #ff5f56; }
+.doom-error ul { margin: 0; padding-left: 1.1rem; }
+.doom-error li { margin-bottom: 0.35rem; }
+.doom-error code { color: #fff; }
+
+/* ------------------------------------------------------------------ hud --- */
+.doom-hud {
+  position: fixed;
+  z-index: 150;
+  top: 0.75rem; left: 0.75rem;
+  padding: 0.6rem 0.8rem;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #9effa8;
+  font: 11px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  pointer-events: none;
+  white-space: pre;
+}
+
+/* ------------------------------------------------------------ a11y ------- */
+/* Respect the OS "reduce motion" setting: transform-based effects are the ones
+   that cause trouble, so the engine skips them when this matches. */
+@media (prefers-reduced-motion: reduce) {
+  .doom-splash { transition: none; }
+  .doom-splash-sub { animation: none; opacity: 0.6; }
+}

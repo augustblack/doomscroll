@@ -128,13 +128,20 @@ ffmpeg -i big.mov -vf "scale=-2:1080" -c:v libx264 -crf 26 -preset slow \
   -pix_fmt yuv420p -c:a aac -b:a 128k small.mp4
 ```
 
-If you plan to **scrub** a clip, it needs frequent keyframes or seeking will
-feel gluey:
+If you plan to **scrub** a clip (`playWhen: "scrub"`, or a `hold` slide), it
+needs frequent, evenly spaced keyframes or seeking will feel gluey:
 
 ```sh
-ffmpeg -i big.mov -vf "scale=-2:1080" -c:v libx264 -crf 26 -g 10 \
-  -pix_fmt yuv420p -an scrubbable.mp4
+ffmpeg -i big.mov -vf "scale=-2:720,fps=24" \
+  -c:v libx264 -pix_fmt yuv420p -crf 23 -preset slow \
+  -g 6 -keyint_min 6 -sc_threshold 0 \
+  -x264-params "bframes=0:ref=1:scenecut=0" \
+  -movflags +faststart -an scrubbable.mp4
 ```
+
+`-g 10` on its own is not enough: x264 still inserts extra keyframes wherever it
+detects a cut, so the spacing ends up uneven and some seeks are slow. The full
+recipe is explained in [CONFIG.md](CONFIG.md#preparing-a-clip-to-scrub).
 
 The framework only lets a few clips decode at once, but it can't rescue a
 500 MB file. Keep the whole folder under a couple hundred megabytes.
@@ -176,6 +183,14 @@ media/
 Any webserver works — no special configuration, no server-side anything. Drop
 it on your web space, a static host, or hand in the folder as a zip. The person
 opening it needs nothing but a browser.
+
+> **If you are scrubbing video, the server has to support byte ranges.** Real
+> hosts all do, so your uploaded piece is fine. But the quick local server
+> people reach for first, `python3 -m http.server`, does **not** — and the
+> symptom is nasty, because the clip loads and shows its first frame and simply
+> refuses to seek, so scrubbing looks broken when your config is correct. Use
+> `npx serve` or `php -S localhost:8000` locally instead, or just test scrubbing
+> on the real upload.
 
 Before you hand in:
 

@@ -1,22 +1,7 @@
-/* ===========================================================================
-   doom scroll — this is the only file you need to edit.
-   ---------------------------------------------------------------------------
-   Put your media in the media/ folder, describe your piece below, then open
-   index.html. Full reference for every option is in CONFIG.md.
-
-   THE ONE IDEA: every layer has a "progress" value that runs 0 -> 1 as it
-   crosses the screen. 0 = about to enter, 0.5 = dead centre, 1 = just left.
-   Every effect is written as a from/to across that travel:
-
-       { fx: "blur", from: 30, to: 0 }
-
-   ...means "start blurred, be sharp by the time you've fully crossed".
-   Add range: [0, 0.5] to make it happen over only part of the travel.
-   =========================================================================== */
 
 const DOOM = {
 
-  title: "doom scroll — demo",
+  title: "doom scroll — demo by August",
 
   scroll: "vertical",       // "vertical" or "horizontal"
   mode: "carousel",       // "continuous" (free) or "carousel" (snaps)
@@ -28,15 +13,21 @@ const DOOM = {
   splash: {
     text: "DOOM SCROLL",
     sub: "tap to begin",
-    background: "#0a0a12"
+    background: "#000000"
   },
 
   // One soundtrack under the whole piece. Its effects are driven by how far
   // you've scrolled through the ENTIRE thing, not by any single slide.
   bed: {
     src: "media/drone.mp3",
-    volume: 0.35,
+    volume: 1,
     loop: true,
+
+    // Uncomment to make the soundtrack's speed follow how fast you scroll:
+    // read slowly and it drags, flick and it races, stop and it idles.
+    // `true` uses the defaults; see CONFIG.md "scrollRate" to tune it.
+    scrollRate: true,
+
     fx: [
       { fx: "lowpass", from: 300, to: 6000 },   // opens up as you descend
       { fx: "volume", from: 1, to: 0.4, range: [0.7, 1] }
@@ -44,75 +35,302 @@ const DOOM = {
   },
 
   slides: [
+    {
+      id: "one",
+      background: "#0a0a12",
+      layers: [
+        {
+          type: "image",
+          src: "media/pg01.jpg",
+        },
+        {
+          type: "text",
+          text: "SOMETHING IS INTERFERING",
+          size: "large",
+          pos: "center",
+          color: "#000000",
+          fx: [
+            { fx: "opacity", from: 0, to: 1, range: [0.1, 0.5] },
+            { fx: "blur", from: 30, to: 0, range: [0.1, 0.5] },
+            { fx: "scale", from: 1.6, to: 1 }
+
+          ]
+        }
+
+      ]
+    },
+    {
+      id: "two",
+      background: "#0a0a12",
+      layers: [
+        {
+          type: "image",
+          src: "media/pg02.jpg",
+        },
+        {
+          type: "text",
+          text: "THIS IS NOT A SPEAKER",
+          size: "large",
+          pos: "center",
+          color: "#000000",
+          fx: [
+            { fx: "opacity", from: 0, to: 1, range: [0.1, 0.5] },
+            { fx: "blur", from: 30, to: 0, range: [0.1, 0.5] },
+            { fx: "scale", from: 1.6, to: 1 }
+
+          ]
+        }
+      ]
+    },
+    {
+      id: "descent",
+      background: "#000",
+      hold: 5,                  // pinned for 3 extra screens of scrolling
+      layers: [
+        {
+          type: "video",
+          src: "media/floor_sm.mp4"
+          // hold implies playWhen: "scrub" on a video, so nothing else needed
+        },
+        {
+          type: "text",
+          text: "you are the transport",
+          size: "medium",
+          pos: "bottomleft",
+          shadow: true,
+          // On a hold slide, effects run across the PIN: 0 when it locks,
+          // 1 when it releases. Start the fade a little way in so it doesn't
+          // appear to pop.
+          fx: [
+            { fx: "opacity", from: 0, to: 1, range: [0.05, 0.4] },
+            { fx: "translateY", from: 10, to: -10 }
+          ]
+        },
+        {
+          type: "audio",
+          src: "media/noise.mp3",
+          scrollRate: true,
+          volume: 0.35,
+          playWhen: "inview",
+          fx: [
+            { fx: "reverb", from: 0, to: 0.9, decay: 4 },
+            { fx: "highpass", from: 20, to: 900 },
+            { fx: "delay", from: 0, to: 0.5, time: 0.33, feedback: 0.5, range: [0.4, 1] },
+            { fx: "volume", from: 0, to: 1, range: [0, 0.25] }
+          ]
+        }
+
+      ]
+    },
+
+
+    {
+      id: "one",
+      background: "#0a0a12",
+      layers: [
+        {
+          type: "image",
+          src: "media/pg03.jpg",
+        },
+        {
+          type: "text",
+          text: "NO ONE IS TALKING",
+          size: "large",
+          pos: "center",
+          color: "#000000",
+          fx: [
+            { fx: "opacity", from: 0, to: 1, range: [0.1, 0.5] },
+            { fx: "blur", from: 30, to: 0, range: [0.1, 0.5] },
+            { fx: "scale", from: 1.6, to: 1 }
+
+          ]
+        }
+
+      ]
+    },
+
+
+    {
+      id: "one",
+      background: "#0a0a12",
+      layers: [
+        {
+          type: "image",
+          src: "media/pg04.jpg",
+        },
+        {
+          type: "text",
+          text: "I DONT KNOW",
+          size: "large",
+          pos: "center",
+          color: "#000000",
+          fx: [
+            { fx: "opacity", from: 0, to: 1, range: [0.1, 0.5] },
+            { fx: "blur", from: 30, to: 0, range: [0.1, 0.5] },
+            { fx: "scale", from: 1.6, to: 1 }
+
+          ]
+        }
+
+      ]
+    },
+
+
+    {
+      id: "one",
+      background: "#0a0a12",
+      layers: [
+        {
+          type: "image",
+          src: "media/pg05.jpg",
+        },
+        {
+          type: "text",
+          text: "WINDOWLESS ROOM",
+          size: "large",
+          pos: "center",
+          color: "#000000",
+          fx: [
+            { fx: "opacity", from: 0, to: 1, range: [0.1, 0.5] },
+            { fx: "blur", from: 30, to: 0, range: [0.1, 0.5] },
+            { fx: "scale", from: 1.6, to: 1 }
+
+          ]
+        }
+
+      ]
+    },
+
+
+    {
+      id: "one",
+      background: "#0a0a12",
+      layers: [
+        {
+          type: "image",
+          src: "media/pg06.jpg",
+        },
+        {
+          type: "text",
+          text: "ALL ALONE",
+          size: "large",
+          pos: "center",
+          color: "#000000",
+          fx: [
+            { fx: "opacity", from: 0, to: 1, range: [0.1, 0.5] },
+            { fx: "blur", from: 30, to: 0, range: [0.1, 0.5] },
+            { fx: "scale", from: 1.6, to: 1 }
+
+          ]
+        }
+
+      ]
+    },
+
+
+    {
+      layers: [
+        {
+          type: "image",
+          src: "media/pg07.jpg",
+        },
+        {
+          type: "text",
+          text: "BORING OBJECTS",
+          size: "large",
+          pos: "center",
+          color: "#000000",
+          fx: [
+            { fx: "opacity", from: 0, to: 1, range: [0.1, 0.9] },
+            { fx: "blur", from: 100, to: 0, range: [0.1, 0.9] },
+            { fx: "scale", from: 1.6, to: 1 }
+
+          ]
+        }
+
+      ]
+    },
+
+    {
+      id: "one",
+      background: "#0a0a12",
+      layers: [
+        {
+          type: "image",
+          src: "media/pg08.jpg",
+        },
+      ]
+    },
+
+
+
+    /* --- a pinned, scroll-scrubbed video ----------------------------------
+       The slide stops dead in the middle of the screen and your scrolling
+       walks the video's frames. At the last frame it lets go and moves on.
+       See CONFIG.md "hold — pinned scrubbing" for how to encode the clip —
+       an ordinary mp4 will scrub like a slideshow.
+    {
+      id: "descent",
+      background: "#000",
+      hold: 3,                  // pinned for 3 extra screens of scrolling
+      layers: [
+        {
+          type: "video",
+          src: "media/floor_sm.mp4"
+          // hold implies playWhen: "scrub" on a video, so nothing else needed
+        },
+        {
+          type: "text",
+          text: "you are the transport",
+          size: "medium",
+          pos: "bottomleft",
+          shadow: true,
+          // On a hold slide, effects run across the PIN: 0 when it locks,
+          // 1 when it releases. Start the fade a little way in so it doesn't
+          // appear to pop.
+          fx: [
+            { fx: "opacity", from: 0, to: 1, range: [0.05, 0.4] },
+            { fx: "translateY", from: 10, to: -10 }
+          ]
+        }
+      ]
+    },
+    */
 
     /* --- 1. a plain title card -------------------------------------------
        Text is just another layer type, so it can sit alone like this or be
-       stacked on top of video and images (see slide 2). */
+       stacked on top of video and images (see slide 2).
     {
       id: "title",
       background: "#0a0a12",
       layers: [
         {
           type: "text",
-          text: "Keep Scrolling",
+          text: "Keep Vibing",
           size: "huge",
-          pos: "center",
-          fx: [
-            { fx: "opacity", from: 0, to: 1, range: [0, 0.35] },
-            { fx: "opacity", from: 1, to: 0, range: [0.65, 1] },
-            { fx: "blur", from: 0, to: 3 },
-            { fx: "translateY", from: 100, to: 0 }
-          ]
+          pos: "center"
         }
       ]
     },
 
-    /* --- 2. video + a sound with a filter sweep + a caption on top --------
-       The lowpass going 200 -> 18000 is the "underwater becomes clear"
-       move. If you only learn one audio effect, learn this one. */
     {
       id: "arrival",
       background: "#111",
       layers: [
         {
           type: "video",
-          src: "media/pattern.mp4",
+          src: "media/floor_sm.mp4",
           playWhen: "inview",
           fx: [
-            { fx: "blur", from: 40, to: 0, range: [0, 0.5], ease: "out" },
-            { fx: "scale", from: 1.4, to: 1 },
-            { fx: "saturate", from: 0, to: 1.3, range: [0.1, 0.6] }
-          ]
-        },
-        {
-          type: "audio",
-          src: "media/noise.mp3",
-          volume: 0.5,
-          playWhen: "inview",
-          fx: [
-            { fx: "lowpass", from: 200, to: 18000, ease: "inOut" },
-            { fx: "volume", from: 0, to: 1, range: [0, 0.3] },
-            { fx: "volume", from: 1, to: 0, range: [0.7, 1] },
-            { fx: "stereoPan", from: -1, to: 1 }
-          ]
-        },
-        {
-          type: "text",
-          text: "DECIDE NOT TO DECIDE",
-          size: "large",
-          pos: "center",
-          shadow: true,
-          fx: [
-            { fx: "opacity", from: 0, to: 1, range: [0.2, 0.45] },
-            { fx: "translateY", from: 100, to: 0, range: [0, 0.5] }
+            { fx: "rotate", from: -6, to: 6 },
+            { fx: "scale", from: 1.6, to: 1.1 },
+            { fx: "contrast", from: 1.6, to: 1 },
+            { fx: "hueRotate", from: 0, to: 360 }
           ]
         }
       ]
     },
 
-    /* --- 3. two visuals stacked with a blend mode -------------------------
-       mix-blend-mode is where abstract pieces get interesting. Try
-       "difference", "screen", "multiply", "overlay", "exclusion". */
     {
       id: "interference",
       background: "#000",
@@ -143,9 +361,6 @@ const DOOM = {
       ]
     },
 
-    /* --- 4. scrubbing: the video's playhead is tied to your scroll --------
-       playWhen: "scrub" means the clip does not play on its own — YOU are
-       the transport. Scroll up and it runs backwards. */
     {
       id: "scrub",
       background: "#000",
@@ -174,7 +389,6 @@ const DOOM = {
       ]
     },
 
-    /* --- 5. a still image + a reverb swell -------------------------------- */
     {
       id: "cathedral",
       background: "#05050a",
@@ -203,7 +417,6 @@ const DOOM = {
       ]
     },
 
-    /* --- 6. the end ------------------------------------------------------- */
     {
       id: "end",
       background: "#000",
@@ -221,5 +434,6 @@ const DOOM = {
         }
       ]
     }
+    */
   ]
 };

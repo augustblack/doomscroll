@@ -40,8 +40,46 @@ html, body {
   scroll-snap-align: start;
   scroll-snap-stop: always;
 }
+
 .is-vertical   > .doom-slide { width: 100%;  height: 100%; }
 .is-horizontal > .doom-slide { height: 100%; flex: 0 0 100%; }
+
+/* ----------------------------------------------------------------- hold --- */
+/* `hold: N` makes a slide (1+N) screens tall and pins its contents to the
+   screen for the whole of it, so scrolling moves time instead of space. The
+   slide is just the long runway; the .doom-hold inside it is what sticks. */
+
+/* The slide must NOT clip. An overflow:hidden box counts as a scroll container,
+   and `position: sticky` sticks to its nearest scrolling ancestor — so the
+   holder would stick to the slide, which never scrolls, and nothing would pin
+   at all. The holder does the clipping instead. */
+.doom-slide.is-hold {
+  overflow: visible;
+  scroll-snap-align: none;       /* a pin and a snap point cannot both win */
+  scroll-snap-stop: normal;      /* "always" on its own still forces a stop */
+}
+
+.doom-hold {
+  position: sticky;
+  top: 0;
+  left: 0;                       /* so one rule pins on both axes */
+  overflow: hidden;
+}
+
+/* (1+N) screens on the slide, exactly one screen on the holder. Dividing it
+   back out keeps this unit-free — do NOT "simplify" it to 100vh or 100dvh, or
+   the pin drifts by the height of the mobile URL bar. The track is
+   position:fixed specifically so that can never happen. */
+.is-vertical > .doom-slide.is-hold              { height: calc(var(--doom-hold, 1) * 100%); }
+.is-vertical > .doom-slide.is-hold > .doom-hold { width: 100%; height: calc(100% / var(--doom-hold, 1)); }
+
+.is-horizontal > .doom-slide.is-hold              { flex: 0 0 calc(var(--doom-hold, 1) * 100%); }
+.is-horizontal > .doom-slide.is-hold > .doom-hold { height: 100%; width: calc(100% / var(--doom-hold, 1)); }
+
+/* One hold slide softens snapping for the whole piece: "proximity" only grabs
+   you when you are already near an edge, so you can rest inside the pin. */
+.doom-track.is-vertical.is-carousel.has-hold   { scroll-snap-type: y proximity; }
+.doom-track.is-horizontal.is-carousel.has-hold { scroll-snap-type: x proximity; }
 
 /* ---------------------------------------------------------------- layer --- */
 .doom-layer {

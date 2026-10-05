@@ -18,6 +18,16 @@
   var DEFAULT_MAX_CONCURRENT = 4;
   var PLAY_MODES = ['inview', 'always', 'once', 'scrub', 'never', 'manual'];
 
+  var SCROLL_RATE_KEYS = ['normal', 'min', 'max', 'smooth', 'pitch'];
+  var HOLD_MAX = 20;             // screens. Past this someone is scrolling for a minute
+  var VEL_ALPHA = 0.3;           // fixed pre-smoothing that kills single-frame spikes
+
+  /* Safari and iOS throw the audio away for playbackRate outside roughly this
+     window. Chrome is far more permissive, which is exactly how you ship a piece
+     that is mute on half the machines in the room. */
+  var SAFE_RATE_LO = 0.5;
+  var SAFE_RATE_HI = 2.0;
+
   /* ====================================================== error reporting === */
   /* Students will hit trailing commas and misspelled effect names constantly.
      A blank white page teaches them nothing, so every problem gets named. */
@@ -71,6 +81,20 @@
 
   /* Round to 4 decimals so we don't churn the CSS string every frame. */
   function fmt(n) { return Math.round(n * 10000) / 10000; }
+
+  /* Scroll speed jitters in the 4th decimal every single frame, so fmt() would
+     still rewrite playbackRate 60 times a second and churn the decoder's
+     resampler. 1% of speed is inaudible and cuts the writes by about 10x. */
+  function fmt2(n) { return Math.round(n * 100) / 100; }
+
+  /* Chase a target without caring about the frame rate. The naive
+     `v += (target - v) * k` closes the gap twice as fast on a 120Hz iPad as on a
+     60Hz laptop, so the same config would feel different on different screens.
+     `smooth` reads as "how much of the gap it closes in one sixtieth of a second". */
+  function damp(current, target, smooth, dt) {
+    var k = clamp(smooth, 0.001, 1);
+    return current + (target - current) * (1 - Math.pow(1 - k, dt * 60));
+  }
 
   /* ============================================================= registry === */
   /* `kind` decides where a value ends up:
@@ -174,6 +198,96 @@
       if (s) out.push(s);
     }
     return out;
+  }
+
+  /* ======================================================== scrollRate ===== */
+  /* Playback speed tied to how fast you are scrolling, rather than to where you
+     have got to. Returns null when the feature is off. */
+
+  function parseScrollRate(raw, where) {
+    if (raw === undefined || raw === null || raw === false) return null;
+
+    var sr = { normal: 0.8, min: SAFE_RATE_LO, max: SAFE_RATE_HI, smooth: 0.12, pitch: true };
+    if (raw === true) return sr;
+
+    if (typeof raw !== 'object') {
+      fail('"scrollRate" in ' + where + ' must be true or an object.',
+        'Try scrollRate: true, or scrollRate: { min: 0.6, max: 1.8 }');
+      return null;
+    }
+
+    for (var k in raw) {
+      if (!Object.prototype.hasOwnProperty.call(raw, k)) continue;
+      if (SCROLL_RATE_KEYS.indexOf(k) === -1) {
+        fail('Unknown scrollRate setting "' + k + '" in ' + where + '.',
+          'Available: ' + SCROLL_RATE_KEYS.join(', '));
+        continue;
+      }
+      if (k === 'pitch') {
+        if (typeof raw.pitch !== 'boolean') {
+          fail('"scrollRate.pitch" in ' + where + ' must be true or false.',
+            'true lets the pitch rise with the speed, like a tape. ' +
+            'false keeps the pitch and changes only the tempo.');
+        } else sr.pitch = raw.pitch;
+        continue;
+      }
+      if (typeof raw[k] !== 'number' || isNaN(raw[k])) {
+        fail('"scrollRate.' + k + '" in ' + where + ' must be a number.',
+          'You wrote ' + JSON.stringify(raw[k]) + '.');
+      } else sr[k] = raw[k];
+    }
+
+    if (sr.normal <= 0) {
+      fail('"scrollRate.normal" in ' + where + ' must be bigger than zero.',
+        'It is how many screens per second counts as normal speed — try 0.8.');
+      sr.normal = 0.8;
+    }
+    if (sr.max < sr.min) {
+      fail('"scrollRate.max" in ' + where + ' is smaller than "min", so they have been swapped.',
+        'min is the slowest speed, max the fastest.');
+      var swap = sr.min; sr.min = sr.max; sr.max = swap;
+    }
+    sr.min = clamp(sr.min, 0.0625, 16);
+    sr.max = clamp(sr.max, 0.0625, 16);
+    sr.smooth = clamp(sr.smooth, 0.001, 1);
+
+    /* Legal, and it sounds good in Chrome — so this is a warning rather than an
+       error. It is still the most likely way this feature goes silent in class. */
+    if ((sr.min < SAFE_RATE_LO || sr.max > SAFE_RATE_HI) && window.console) {
+      console.warn('[doom] scrollRate in ' + where + ' goes outside ' +
+        SAFE_RATE_LO + '–' + SAFE_RATE_HI + '. Safari and iOS drop the sound ' +
+        'outside that window, so this may be silent on a phone.');
+    }
+    return sr;
+  }
+
+  /* `hold` is geometry: how many extra screens of scrolling a slide occupies
+     while its contents stay pinned. Returns 0 when there is no hold. */
+  function parseHold(raw, where) {
+    if (!raw) return 0;
+    if (raw === true) return 2;
+    if (typeof raw !== 'number' || !isFinite(raw) || raw <= 0) {
+      fail('"hold" in ' + where + ' must be true, or a positive number of screens.',
+        'hold: 2 pins the slide while you scroll two extra screens past it. ' +
+        'hold: true means 2.');
+      return 0;
+    }
+    if (raw > HOLD_MAX) {
+      fail('"hold" in ' + where + ' is ' + raw + ' screens, which is too long.',
+        'Keep it to ' + HOLD_MAX + ' or less — nobody will scroll that far.');
+      return 0;
+    }
+    return raw;
+  }
+
+  /* Safari spelled this with a prefix until recently, and forgets it whenever a
+     new source loads — so it gets set both when the src is attached and again on
+     loadedmetadata. */
+  function applyPitchPref(m, pitchFollows) {
+    var keep = !pitchFollows;
+    if ('preservesPitch' in m) m.preservesPitch = keep;
+    if ('webkitPreservesPitch' in m) m.webkitPreservesPitch = keep;
+    if ('mozPreservesPitch' in m) m.mozPreservesPitch = keep;
   }
 
   /* ============================================================ audio bus === */
@@ -342,6 +456,7 @@
   var slides = [];
   var mediaLayers = [];
   var bedLayer = null;
+  var anyHold = false;           // true once any slide asks to pin itself
   var vertical = true;
   var started = false;
   var maxConcurrent = DEFAULT_MAX_CONCURRENT;
@@ -398,6 +513,10 @@
 
     for (var i = 0; i < config.slides.length; i++) buildSlide(config.slides[i], i);
 
+    /* A pin and a mandatory snap point cannot both win, so one hold slide
+       softens snapping for the whole piece. Known only now that slides exist. */
+    if (anyHold) track.classList.add('has-hold');
+
     if (config.bed && config.bed.src) buildBed(config.bed);
 
     observe();
@@ -417,11 +536,11 @@
     var el = document.createElement('section');
     el.className = 'doom-slide';
     if (cfg.id) el.id = cfg.id;
-    if (cfg.background) el.style.background = cfg.background;
 
     var slide = {
       cfg: cfg, el: el, index: index, layers: [],
-      progress: 0, visibility: 0, near: false
+      progress: 0, visibility: 0, near: false,
+      hold: 0, scrubProgress: 0, fxProgress: 0
     };
 
     /* Beginner shorthand: a slide with `type`/`src` at the top level and no
@@ -437,9 +556,44 @@
         'Give it a type and src, or a "layers" array.');
     }
 
+    /* `hold` describes the whole slide, but it reads better written on the video
+       that is being scrubbed — so accept it in either place and hoist it. With
+       the shorthand above, `cfg` IS the layer cfg, so that case is free. */
+    slide.hold = parseHold(cfg.hold, 'slide ' + (index + 1));
+    if (cfg.layers) {
+      for (var h = 0; h < layerCfgs.length; h++) {
+        var lcfg = layerCfgs[h];
+        if (!lcfg || typeof lcfg !== 'object' || !lcfg.hold) continue;
+        var lhold = parseHold(lcfg.hold, 'slide ' + (index + 1) + ', layer ' + (h + 1));
+        if (!lhold) continue;
+        if (slide.hold && slide.hold !== lhold) {
+          fail('Slide ' + (index + 1) + ' asks to hold for two different lengths.',
+            'A hold belongs to the whole slide — put it on just one layer, ' +
+            'or on the slide itself.');
+          continue;
+        }
+        slide.hold = lhold;
+      }
+    }
+
+    /* A hold slide is a long runway with a sticky holder inside it. Every other
+       slide keeps exactly the structure it has always had: a sticky wrapper
+       creates a stacking context, which would quietly change what a
+       `blend:` layer blends against. */
+    var parent = el;
+    if (slide.hold) {
+      anyHold = true;
+      el.classList.add('is-hold');
+      el.style.setProperty('--doom-hold', String(1 + slide.hold));
+      parent = document.createElement('div');
+      parent.className = 'doom-hold';
+      el.appendChild(parent);
+    }
+    if (cfg.background) parent.style.background = cfg.background;
+
     for (var i = 0; i < layerCfgs.length; i++) {
       var layer = buildLayer(layerCfgs[i], slide, index, i);
-      if (layer) { slide.layers.push(layer); el.appendChild(layer.el); }
+      if (layer) { slide.layers.push(layer); parent.appendChild(layer.el); }
     }
 
     track.appendChild(el);
@@ -466,8 +620,14 @@
       baseOpacity: typeof cfg.opacity === 'number' ? cfg.opacity : 1,
       baseVolume: typeof cfg.volume === 'number' ? cfg.volume : 1,
       duckGain: 1,
-      playWhen: cfg.playWhen || defaults.playWhen || 'inview',
+      /* A pinned video almost always wants to be scrubbed, so `hold` turns that
+         on for you — but never over an explicit choice, so `playWhen: "inview"`
+         still gets you a clip that plays normally while it is pinned. */
+      playWhen: cfg.playWhen ||
+        (slide.hold && type === 'video' ? 'scrub' : null) ||
+        defaults.playWhen || 'inview',
       hasPlayed: false,
+      scrollRate: null, rateNow: 1,
       lastFilter: null, lastTransform: null, lastOpacity: null, lastRate: null
     };
 
@@ -552,6 +712,18 @@
         return null;
     }
 
+    if (cfg.scrollRate !== undefined) {
+      if (!layer.media) {
+        fail('"scrollRate" in ' + where + ' needs a layer that makes a sound.',
+          'scrollRate only works on "video" and "audio" layers, and on the bed.');
+      } else if (layer.playWhen === 'scrub') {
+        fail('"scrollRate" in ' + where + ' does nothing, because that layer is scrubbing.',
+          'A scrubbing clip is already driven by your scrolling — use one or the other.');
+      } else {
+        layer.scrollRate = parseScrollRate(cfg.scrollRate, where);
+      }
+    }
+
     /* Split the effect list by where each value has to be written. */
     var all = fxListOf(cfg, where);
     layer.cssFx = [];
@@ -563,7 +735,14 @@
         if (!layer.media) {
           fail('Effect "' + all[i].fx + '" in ' + where + ' is an audio effect, but that layer has no sound.',
             'Audio effects only work on "video" and "audio" layers.');
-        } else layer.audioFx.push(all[i]);
+        } else {
+          if (layer.playWhen === 'scrub') {
+            fail('Effect "' + all[i].fx + '" in ' + where + ' will never be heard, ' +
+              'because a scrubbing clip does not play.',
+              'Drop the effect, or put the sound on its own "audio" layer.');
+          }
+          layer.audioFx.push(all[i]);
+        }
       } else if (k === 'media') {
         if (layer.media) layer.mediaFx.push(all[i]);
       } else {
@@ -573,6 +752,10 @@
 
     if (layer.media) {
       layer.media.addEventListener('ended', function () { layer.hasPlayed = true; });
+      /* Safari forgets the pitch preference every time a source loads. */
+      layer.media.addEventListener('loadedmetadata', function () {
+        applyPitchPref(layer.media, layer.scrollRate ? layer.scrollRate.pitch : true);
+      });
       mediaLayers.push(layer);
     }
     return layer;
@@ -595,8 +778,14 @@
       audioNodes: null, audioSrc: null,
       baseVolume: typeof cfg.volume === 'number' ? cfg.volume : 1,
       duckGain: 1,
+      scrollRate: parseScrollRate(cfg.scrollRate, 'the audio bed'),
+      rateNow: 1, lastRate: null,
       cssFx: [], mediaFx: [], audioFx: []
     };
+    applyPitchPref(a, bedLayer.scrollRate ? bedLayer.scrollRate.pitch : true);
+    a.addEventListener('loadedmetadata', function () {
+      applyPitchPref(a, bedLayer.scrollRate ? bedLayer.scrollRate.pitch : true);
+    });
     var all = fxListOf(cfg, 'the audio bed');
     for (var i = 0; i < all.length; i++) {
       if (all[i].kind === 'audio') bedLayer.audioFx.push(all[i]);
@@ -617,7 +806,9 @@
     var io = new IntersectionObserver(function (entries) {
       for (var i = 0; i < entries.length; i++) {
         var slide = entries[i].target.__doomSlide;
-        if (slide) slide.near = entries[i].isIntersecting;
+        if (!slide) continue;
+        slide.near = entries[i].isIntersecting;
+        if (slide.near) warmScrub(slide);
       }
     }, { root: track, rootMargin: '100% 100% 100% 100%', threshold: 0 });
 
@@ -625,6 +816,38 @@
       slides[j].el.__doomSlide = slides[j];
       io.observe(slides[j].el);
     }
+  }
+
+  /* A scrubbing clip has to be downloaded and decoded BEFORE you reach it, or
+     the first thing you scroll through is a black rectangle. The 100% rootMargin
+     above buys about a screen of warning; a hold slide is taller than the
+     screen, so it gets even more. */
+  function warmScrub(slide) {
+    for (var i = 0; i < slide.layers.length; i++) {
+      var layer = slide.layers[i];
+      if (!layer.media || layer.playWhen !== 'scrub') continue;
+      ensureSrc(layer);
+      primeScrub(layer);
+    }
+  }
+
+  /* iOS will not render a seeked frame from a <video> that has never been handed
+     to the decoder, no matter what `preload` says — so hand it over once and
+     take it straight back. Only legal once the splash tap has happened, which is
+     why warmScrub() is called again from start(). */
+  function primeScrub(layer) {
+    var m = layer.media;
+    if (!layer.nudged) {
+      layer.nudged = true;
+      m.addEventListener('loadedmetadata', function () {
+        if (m.currentTime === 0) m.currentTime = 0.001;
+      });
+    }
+    if (!started || layer.primed) return;
+    layer.primed = true;
+    var p = m.play();
+    if (p && p.then) p.then(function () { m.pause(); }, function () {});
+    else { try { m.pause(); } catch (e) {} }
   }
 
   /* --------------------------------------------------------------- splash --- */
@@ -674,7 +897,17 @@
     started = true;
     audioReady();
 
-    for (var i = 0; i < mediaLayers.length; i++) buildAudioChain(mediaLayers[i]);
+    /* A scrubbing clip is permanently paused, so it emits nothing — and
+       createMediaElementSource rewires an element for good. Leave it alone. */
+    for (var i = 0; i < mediaLayers.length; i++) {
+      if (mediaLayers[i].playWhen !== 'scrub') buildAudioChain(mediaLayers[i]);
+    }
+
+    /* The observer may well have fired before the splash was tapped, and the
+       decoder nudge in primeScrub() is only legal inside this gesture. */
+    for (var s = 0; s < slides.length; s++) {
+      if (slides[s].near) warmScrub(slides[s]);
+    }
 
     if (bedLayer) {
       buildAudioChain(bedLayer);
@@ -692,10 +925,37 @@
   /* ------------------------------------------------------------ main loop --- */
 
   var lastMediaCheck = 0;
+  var lastScrollPos = 0;
+  var lastScrollTime = 0;
+  var scrollVel = 0;             // how fast you are scrolling, in screens per second
 
   function tick(now) {
     var trackRect = track.getBoundingClientRect();
     var viewSize = vertical ? trackRect.height : trackRect.width;
+
+    /* ---- how hard are you scrolling? ---------------------------------------
+       Measured in screens per second rather than pixels, so the same config
+       feels the same on a phone and on a projector. Absolute value: scrolling
+       up counts just as much as scrolling down. */
+    var pos = vertical ? track.scrollTop : track.scrollLeft;
+    var frameDt = 0;
+    if (now && lastScrollTime) {
+      var dt = (now - lastScrollTime) / 1000;
+      if (dt > 0.001 && dt < 0.25) {
+        frameDt = dt;
+        var raw = Math.abs(pos - lastScrollPos) / dt / (viewSize || 1);
+        scrollVel += (raw - scrollVel) * VEL_ALPHA;
+      }
+      /* dt of a quarter second or more means the tab was in the background.
+         Resync without feeding it in, or coming back pegs the rate at max. */
+    }
+    lastScrollPos = pos;
+    if (now) lastScrollTime = now;
+
+    if (frameDt) {
+      for (var q = 0; q < mediaLayers.length; q++) followRate(mediaLayers[q], frameDt);
+      if (bedLayer) followRate(bedLayer, frameDt);
+    }
 
     for (var i = 0; i < slides.length; i++) {
       var s = slides[i];
@@ -709,20 +969,48 @@
          left the trailing edge, 0.5 when perfectly centred. */
       s.progress = clamp((viewSize - start) / (viewSize + size || 1), 0, 1);
 
+      /* On a hold slide the pin IS the performance, so effects run across the
+         pin instead: 0 the moment it locks to the screen, 1 the moment it lets
+         go. Without this a text layer would sit frozen for the whole hold. */
+      var pinSpan = size - viewSize;
+      s.scrubProgress = (s.hold && pinSpan > 0) ? clamp(-start / pinSpan, 0, 1) : s.progress;
+      s.fxProgress = s.hold ? s.scrubProgress : s.progress;
+
       var visStart = Math.max(0, start);
       var visEnd = Math.min(viewSize, start + size);
+      /* For a slide taller than the screen this saturates at 1 for the whole
+         pin, which is what we want — a pinned slide really is fully on screen. */
       s.visibility = Math.max(0, visEnd - visStart) / Math.min(size, viewSize || 1);
 
-      for (var j = 0; j < s.layers.length; j++) applyLayer(s.layers[j], s.progress);
+      for (var j = 0; j < s.layers.length; j++) {
+        var L = s.layers[j];
+        applyLayer(L, s.fxProgress);
+        /* Seeking has to happen every frame. updateMedia() below only runs ten
+           times a second, which is far too coarse for a playhead. */
+        if (L.playWhen === 'scrub') applyScrub(L, s.fxProgress);
+      }
     }
 
-    if (bedLayer && started) applyAudio(bedLayer, documentProgress());
+    if (bedLayer && started) {
+      var dp = documentProgress();
+      applyAudio(bedLayer, dp);
+      applyRate(bedLayer, dp);     // the bed has no element, so it never sees applyLayer
+    }
 
     /* Play/pause decisions don't need 60fps and cause work when they change. */
     if (!now || now - lastMediaCheck > 100) { lastMediaCheck = now || 0; updateMedia(); }
 
     if (DEBUG) updateHud();
     requestAnimationFrame(tick);
+  }
+
+  function followRate(layer, dt) {
+    var sr = layer.scrollRate;
+    if (!sr) return;
+    var target = clamp(scrollVel / sr.normal, sr.min, sr.max);
+    /* Stop scrolling and the target becomes `min`, so it glides down to a crawl
+       and keeps going. It never stops, which is the whole trick. */
+    layer.rateNow = damp(layer.rateNow, target, sr.smooth, dt < 0.1 ? dt : 0.1);
   }
 
   function documentProgress() {
@@ -771,14 +1059,29 @@
     if (o !== layer.lastOpacity) { layer.el.style.opacity = o; layer.lastOpacity = o; }
 
     if (layer.media) {
-      for (var m = 0; m < layer.mediaFx.length; m++) {
-        if (layer.mediaFx[m].fx === 'playbackRate') {
-          var rate = fmt(clamp(fxValue(layer.mediaFx[m], p), 0.0625, 16));
-          if (rate !== layer.lastRate) { layer.media.playbackRate = rate; layer.lastRate = rate; }
-        }
-      }
+      applyRate(layer, p);
       if (started) applyAudio(layer, p);
     }
+  }
+
+  /* playbackRate has two possible drivers: a `playbackRate` effect, which sets
+     the base speed, and `scrollRate`, which multiplies it by how fast you are
+     scrolling. They compose, so you can have a slow-motion clip that still
+     races when you flick. */
+  function applyRate(layer, p) {
+    var rate = 1, driven = false;
+    for (var m = 0; m < layer.mediaFx.length; m++) {
+      if (layer.mediaFx[m].fx === 'playbackRate') {
+        rate = fxValue(layer.mediaFx[m], p);
+        driven = true;
+      }
+    }
+    if (layer.scrollRate) { rate *= layer.rateNow; driven = true; }
+    if (!driven) return;
+
+    var r = clamp(rate, 0.0625, 16);
+    r = layer.scrollRate ? fmt2(r) : fmt(r);
+    if (r !== layer.lastRate) { layer.media.playbackRate = r; layer.lastRate = r; }
   }
 
   /* ------------------------------------------------- media play / pause ----- */
@@ -788,6 +1091,7 @@
     if (!layer.media.getAttribute('src')) {
       layer.media.preload = 'auto';
       layer.media.setAttribute('src', layer.cfg.src);
+      applyPitchPref(layer.media, layer.scrollRate ? layer.scrollRate.pitch : true);
     }
   }
 
@@ -810,6 +1114,22 @@
     if (layer.media && !layer.media.paused) layer.media.pause();
   }
 
+  /* Bind the playhead straight to a progress value. Runs every frame. */
+  function applyScrub(layer, p) {
+    var m = layer.media;
+    if (!m.paused) m.pause();
+    /* Asking for a second seek while the first is still running is how you end
+       up staring at one frozen frame on a phone. */
+    if (m.seeking) return;
+    var d = m.duration;
+    if (!d || !isFinite(d)) return;
+    /* Landing exactly on the end of an mp4 usually shows black, so stop short.
+       Clamping the span rather than the result keeps progress 0 at time 0. */
+    var span = Math.max(0, d - 0.05);
+    var target = clamp(p, 0, 1) * span;
+    if (Math.abs(m.currentTime - target) > 0.02) m.currentTime = target;
+  }
+
   function updateMedia() {
     if (!started) return;
     var candidates = [];
@@ -821,19 +1141,10 @@
 
       if (mode === 'never' || mode === 'manual') { pause(layer); continue; }
 
-      if (mode === 'scrub') {
-        /* Bind the video's playhead directly to scroll position. */
-        if (slide.near) {
-          ensureSrc(layer);
-          pause(layer);
-          var d = layer.media.duration;
-          if (d && isFinite(d)) {
-            var target = clamp(slide.progress, 0, 1) * d;
-            if (Math.abs(layer.media.currentTime - target) > 0.02) layer.media.currentTime = target;
-          }
-        }
-        continue;
-      }
+      /* Scrubbing is driven every frame by applyScrub() in tick(), not here.
+         The pause catches a scrub layer whose slide is off screen, and the
+         continue is what keeps it out of the candidate list below. */
+      if (mode === 'scrub') { pause(layer); continue; }
 
       if (mode === 'always') { candidates.push({ layer: layer, score: 2 }); continue; }
 
@@ -873,20 +1184,32 @@
 
   function updateHud() {
     var lines = ['doom debug — ' + (vertical ? 'vertical' : 'horizontal') +
-      ' / ' + (config.mode === 'carousel' ? 'carousel' : 'continuous'),
-      'overall  ' + documentProgress().toFixed(3)];
+      ' / ' + (config.mode === 'carousel' ? 'carousel' : 'continuous') +
+      (anyHold ? ' / pinned' : ''),
+      'overall  ' + documentProgress().toFixed(3),
+      'scroll   ' + scrollVel.toFixed(2) + ' screens/s' +
+        (bedLayer && bedLayer.scrollRate ? '   bed x' + bedLayer.rateNow.toFixed(2) : '')];
     for (var i = 0; i < slides.length; i++) {
       var s = slides[i];
       if (!s.near) continue;
       lines.push(
         pad(String(i + 1) + (s.cfg.id ? ' ' + s.cfg.id : ''), 12) +
-        ' p=' + s.progress.toFixed(3) + '  vis=' + s.visibility.toFixed(2));
+        ' p=' + s.progress.toFixed(3) + '  vis=' + s.visibility.toFixed(2) +
+        (s.hold ? '  pin=' + s.scrubProgress.toFixed(3) : '') +
+        rateSuffix(s));
     }
     var text = lines.join('\n');
     if (text !== hudEl.textContent) hudEl.textContent = text;
   }
 
   function pad(s, n) { while (s.length < n) s += ' '; return s; }
+
+  function rateSuffix(slide) {
+    for (var i = 0; i < slide.layers.length; i++) {
+      if (slide.layers[i].scrollRate) return '  x' + slide.layers[i].rateNow.toFixed(2);
+    }
+    return '';
+  }
 
   /* ================================================================= go ===== */
 

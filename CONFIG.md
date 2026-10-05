@@ -11,6 +11,8 @@ first — this page is for looking things up.
 - [Text layers](#text-layers)
 - [Effects](#effects)
 - [playWhen](#playwhen)
+- [scrollRate](#scrollrate)
+- [hold — pinned scrubbing](#hold--pinned-scrubbing)
 
 ---
 
@@ -49,6 +51,18 @@ fx: [ { fx: "translateY", from: 15, to: -15 } ]
 
 ```js
 { type: "video", src: "media/clip.mp4", playWhen: "scrub" }
+```
+
+**Pinned scrubbing** — the slide stops dead and your scrolling walks the frames
+
+```js
+{ hold: 3, type: "video", src: "media/clip.mp4" }
+```
+
+**A soundtrack that drags when you read slowly**
+
+```js
+bed: { src: "media/drone.mp3", scrollRate: true }
 ```
 
 **Sound sweeping across your head**
@@ -115,11 +129,13 @@ bed: {
   src: "media/drone.mp3",
   volume: 0.35,
   loop: true,                 // default true
+  scrollRate: true,           // speed follows how fast you scroll
   fx: [ { fx: "lowpass", from: 300, to: 6000 } ]
 }
 ```
 
-Only [audio effects](#audio-effects) work on the bed.
+Only [audio effects](#audio-effects) and [`scrollRate`](#scrollrate) work on the
+bed.
 
 ---
 
@@ -132,6 +148,7 @@ Each entry in `slides` is one screenful.
 | `id` | a name, shown in the `?debug=1` readout. Optional but helpful |
 | `background` | CSS colour behind this slide's layers |
 | `layers` | array of layers, drawn back to front |
+| `hold` | pins the slide to the screen while you scroll `N` extra screens past it — see [hold](#hold--pinned-scrubbing) |
 
 **Shorthand:** a slide with a `type` and no `layers` is treated as a single
 layer, so these two are identical:
@@ -158,6 +175,8 @@ Every layer has a `type`. Layers are drawn in order — first is furthest back.
 | `loop` | video, audio | `true` (default) or `false` |
 | `volume` | video, audio | base loudness, `0`–`1` |
 | `playWhen` | video, audio | see [playWhen](#playwhen) |
+| `scrollRate` | video, audio | playback speed follows how fast you scroll — see [scrollRate](#scrollrate) |
+| `hold` | all | same as putting it on the slide — see [hold](#hold--pinned-scrubbing) |
 | `silent` | video | `true` mutes the clip entirely |
 | `alt` | image | description for screen readers |
 
@@ -235,6 +254,9 @@ Work on any layer.
 |---|---|---|---|
 | `playbackRate` | `0.0625`–`16` | `1` | speed. Also shifts the pitch of the sound |
 
+If the layer also has [`scrollRate`](#scrollrate), the two **multiply**:
+`playbackRate` sets the base speed and `scrollRate` pushes it around.
+
 ### Audio effects
 
 Only work on `video` and `audio` layers, and on the `bed`.
@@ -274,12 +296,153 @@ Controls when a `video` or `audio` layer plays.
 | `"inview"` | **default.** Plays while the slide is on screen, pauses when it isn't |
 | `"always"` | plays constantly, on screen or not |
 | `"once"` | starts the first time the slide appears and never restarts |
-| `"scrub"` | doesn't play on its own — the video's playhead follows your scrolling. Scroll up and it runs backwards |
+| `"scrub"` | doesn't play on its own — the video's playhead follows your scrolling. Scroll up and it runs backwards. Pairs with [`hold`](#hold--pinned-scrubbing), which is what makes it feel like a transport rather than a flicker |
 | `"never"` | never plays. Useful for a video you only want as a still frame |
+| `"manual"` | never plays by itself and is left alone. An escape hatch; you will probably never need it |
 
 Only `maxConcurrent` clips (default 4) play at once; when more qualify, the
 most-visible ones win. Media is not downloaded until its slide is nearly on
 screen, so long pieces stay light.
 
-For scrubbing to feel smooth the clip needs frequent keyframes — see the
-media diet section of the [README](README.md#media-diet).
+For scrubbing to feel smooth the clip needs frequent keyframes — see
+[preparing a clip to scrub](#preparing-a-clip-to-scrub).
+
+---
+
+## scrollRate
+
+Ties playback speed to **how fast you are scrolling**, rather than to how far
+you have got. Scroll slowly and the sound drags; flick down the page and it
+races. Stop and it idles rather than stopping, which is the whole trick — it
+never feels like you hit a pause button.
+
+```js
+bed: { src: "media/drone.mp3", scrollRate: true }
+```
+
+`true` gives sensible defaults. For control, use an object:
+
+| Key | Default | What it does |
+|---|---|---|
+| `normal` | `0.8` | how many **screens per second** of scrolling counts as normal speed. Lower it to make the piece easier to speed up |
+| `min` | `0.5` | slowest it goes. This is also where it idles when you stop |
+| `max` | `2.0` | fastest it goes |
+| `smooth` | `0.12` | how quickly it reacts, `0`–`1`. `0.05` is syrupy, `0.5` is twitchy |
+| `pitch` | `true` | `true` lets the pitch rise and fall with the speed, like a tape. `false` keeps the pitch and changes only the tempo |
+
+Works on the [`bed`](#bed) and on any `video` or `audio` layer.
+
+Speed is measured in **screens per second, not pixels**, so the same numbers
+feel the same on a phone and on a projector. Scrolling **up** speeds it up too —
+it is about how hard you are moving, not which way.
+
+> **Keep `min` at or above `0.5` and `max` at or below `2.0`.** Outside that
+> range Safari and iOS throw the sound away and you get silence. Chrome will
+> happily play `0.1`, which is exactly how you ship a piece that is mute on half
+> the machines in the room.
+
+`scrollRate` and `playWhen: "scrub"` do the same job in two different ways — a
+scrubbing clip is already glued to your scrolling. Use one or the other.
+
+In `mode: "carousel"` the scroll arrives in snapped bursts, so the effect reads
+as a pulse per slide. It is much better in `mode: "continuous"`.
+
+---
+
+## hold — pinned scrubbing
+
+`playWhen: "scrub"` on an ordinary slide gives you one screen of scrolling to get
+through an entire clip, which is far too fast to see anything. `hold` fixes that:
+it makes the slide taller and pins its contents to the screen, so your scrolling
+moves **time** instead of space.
+
+```js
+{ id: "descent", hold: 3, type: "video", src: "media/clip.mp4" }
+```
+
+Three extra screens of scrolling, during which nothing moves except the video's
+playhead. On a `video` layer `hold` turns on `playWhen: "scrub"` for you — write
+`playWhen: "inview"` yourself if you would rather it just play while pinned.
+
+| Value | Meaning |
+|---|---|
+| `2`–`4` | the useful range. `hold: 3` is about four seconds of unhurried scrolling |
+| `true` | the same as `2` |
+| `0.5` | fractions are fine, for a short held beat |
+
+`hold` can go on the slide or on any one layer inside it — it means the same
+thing either way, because it describes the whole slide.
+
+Everything else on the slide is pinned too, and **every layer's effects are
+driven by the pin** rather than by the slide arriving: `0` is the moment it locks
+to the screen, `1` the moment it lets go. So text can assemble itself over the
+hold:
+
+```js
+{
+  hold: 3,
+  layers: [
+    { type: "video", src: "media/clip.mp4" },
+    { type: "text", text: "slower", pos: "bottomleft", shadow: true,
+      fx: [ { fx: "opacity", from: 0, to: 1, range: [0.05, 0.4] } ] }
+  ]
+}
+```
+
+Start that fade a little way in. At `range: [0, ...]` the text is already fully
+there the instant the pin engages, which reads as a mistake.
+
+**hold and carousel don't really get along.** A snap point wants to lock the
+slide's top edge; a pin wants you to scroll past it. If any slide has a `hold`,
+snapping across the whole piece softens from "always" to "only when you are
+already close". Pieces built around `hold` are happier in `mode: "continuous"`.
+
+### Preparing a clip to scrub
+
+This single thing decides whether scrubbing feels like a transport or like a
+slideshow. A normal `.mp4` only stores a complete picture every couple of
+seconds and rebuilds everything in between, so to show you one frame the browser
+has to decode everything since the last complete one. Store one every few frames
+instead:
+
+```sh
+ffmpeg -i source.mov \
+  -vf "scale=-2:720,fps=24" \
+  -c:v libx264 -pix_fmt yuv420p -crf 23 -preset slow \
+  -g 6 -keyint_min 6 -sc_threshold 0 \
+  -x264-params "bframes=0:ref=1:scenecut=0" \
+  -movflags +faststart -an \
+  media/clip.mp4
+```
+
+- `-g 6 -keyint_min 6` — a complete picture every 6 frames, a quarter of a
+  second, so no seek ever has to decode more than five frames.
+- `-sc_threshold 0` and `scenecut=0` — stop ffmpeg adding extra ones of its own
+  wherever it sees a cut, so the spacing stays even. Without these, `-g` alone
+  does not do what you think.
+- `bframes=0 ref=1` — no out-of-order frames. This is the other half of why
+  ordinary video scrubs badly.
+- `-an` — drop the audio. A scrubbing clip is paused, so it is silent anyway;
+  put the sound on a separate `audio` layer or the `bed`.
+- `fps=24` and `720` — scrubbing decodes much harder than playing does. Half the
+  pixels is twice the responsiveness.
+
+If it still feels gluey, go all the way and store every frame complete:
+
+```sh
+ffmpeg -i source.mov -vf "scale=-2:720,fps=24" \
+  -c:v libx264 -pix_fmt yuv420p -crf 20 -g 1 \
+  -movflags +faststart -an media/clip.mp4
+```
+
+That seeks instantly and is roughly four times the size — fine for four seconds,
+a disaster for forty.
+
+**Length.** Aim for **4 to 8 seconds** at 720p, under 8 MB. Roughly
+`hold ≈ seconds ÷ 2`, so a 6-second clip wants `hold: 3`. Longer than about ten
+seconds and you are asking someone to scroll for a full minute.
+
+> **Scrubbing needs a webserver that supports byte ranges.** Every real host
+> does, so your uploaded piece is fine — but `python3 -m http.server` does not,
+> and the symptom is confusing: the clip loads, shows its first frame, and
+> silently refuses to seek. Locally, use `npx serve` or `php -S localhost:8000`.

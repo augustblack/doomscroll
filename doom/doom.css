@@ -153,6 +153,9 @@ html, body {
 .doom-splash-title { margin: 0; font-size: clamp(2rem, 9vmin, 6rem); font-weight: 800; letter-spacing: -0.03em; line-height: 1; }
 .doom-splash-sub   { margin: 0; font-size: clamp(0.9rem, 2.5vmin, 1.2rem); opacity: 0.6; animation: doom-pulse 2.4s ease-in-out infinite; }
 @keyframes doom-pulse { 0%, 100% { opacity: 0.35; } 50% { opacity: 0.85; } }
+/* Still fetching the opening slides: taps do nothing yet, so don't invite them. */
+.doom-splash.is-loading { cursor: progress; }
+.doom-splash.is-loading .doom-splash-sub { animation: none; font-variant-numeric: tabular-nums; }
 
 /* ---------------------------------------------------------------- error --- */
 .doom-error {

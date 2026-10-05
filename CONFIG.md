@@ -105,6 +105,8 @@ const DOOM = { ...these... };
 | `background` | any CSS colour | `"#000"` | behind everything |
 | `fit` | `"cover"` \| `"contain"` | `"cover"` | `cover` fills the screen and crops; `contain` fits the whole frame in |
 | `maxConcurrent` | number | `4` | how many clips may play at once. Lower it if playback stutters |
+| `preload` | `true` \| `false` | `true` | download media ahead of the viewer — see [loading](#loading) |
+| `preloadBudget` | number (MB) | `150`, or `60` on phones | how much to download ahead before stopping |
 | `splash` | object | — | the opening screen, see below |
 | `bed` | object | — | one soundtrack under the whole piece, see below |
 | `defaults` | object | — | `fit` and `playWhen` applied to every layer unless overridden |
@@ -136,6 +138,28 @@ bed: {
 
 Only [audio effects](#audio-effects) and [`scrollRate`](#scrollrate) work on the
 bed.
+
+### Loading
+
+The piece downloads its own media rather than leaving it to the browser:
+
+- The title screen reads `loading 3 / 7` until everything on the **first two
+  slides** (and the `bed`) has arrived, then switches to your `sub` text. After
+  eight seconds it lets people in regardless.
+- After that it keeps downloading the rest **in scroll order**, starting from
+  wherever the viewer currently is, until it is holding `preloadBudget`
+  megabytes. Video and audio are then played from memory, so a clip that has
+  arrived cannot stall and a `hold` clip can be scrubbed on any webserver.
+- If someone scrolls faster than it can download, that clip simply streams the
+  ordinary way.
+
+```js
+preload: false        // turn all of this off; clips load as you reach them
+preloadBudget: 80     // megabytes to download ahead (default 150, 60 on phones)
+```
+
+Opened straight from the folder (`file://`) none of this applies — the files
+are already on the machine. Add `?debug=1` to watch the `preload` count climb.
 
 ---
 
@@ -442,7 +466,7 @@ a disaster for forty.
 `hold ≈ seconds ÷ 2`, so a 6-second clip wants `hold: 3`. Longer than about ten
 seconds and you are asking someone to scroll for a full minute.
 
-> **Scrubbing needs a webserver that supports byte ranges.** Every real host
-> does, so your uploaded piece is fine — but `python3 -m http.server` does not,
-> and the symptom is confusing: the clip loads, shows its first frame, and
-> silently refuses to seek. Locally, use `npx serve` or `php -S localhost:8000`.
+> **A scrubbing clip is downloaded whole before it responds.** That is what
+> lets it seek on any webserver, and it is one more reason to keep these clips
+> short. If you scroll into one on a slow connection before it has arrived, the
+> slide stays empty until it does.

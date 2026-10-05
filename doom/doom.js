@@ -16,6 +16,11 @@
 
   var INVIEW_THRESHOLD = 0.25;   // fraction of a slide on screen before it plays
   var DEFAULT_MAX_CONCURRENT = 4;
+  var PRELOAD_PARALLEL = 2;      // background downloads running at once
+  var PRELOAD_OPENING = 2;       // the splash waits for this many slides' media
+  var PRELOAD_BUDGET_MB = 150;   // stop downloading ahead once this much is held
+  var PRELOAD_BUDGET_SMALL_MB = 60;   // ...on phones and low-memory machines
+  var SPLASH_WAIT_MS = 8000;     // then let them in whether it has loaded or not
   var PLAY_MODES = ['inview', 'always', 'once', 'scrub', 'never', 'manual'];
 
   var SCROLL_RATE_KEYS = ['normal', 'min', 'max', 'smooth', 'pitch'];
@@ -462,6 +467,20 @@
   var maxConcurrent = DEFAULT_MAX_CONCURRENT;
   var hudEl = null;
 
+  var assets = Object.create(null);   // one record per distinct media URL
+  var assetList = [];
+  var preloadOn = true;
+  var preloadBudget = 0;         // bytes; set in boot()
+  var preloadBytes = 0;
+  var preloadActive = 0;
+  var currentIndex = 0;          // the slide that is most on screen right now
+  var splashRefresh = null;
+  var hostRanges = false;        // true once the server has said it can seek
+  /* Blobs need fetch(), and fetch() refuses file:// — where seeking works
+     natively anyway, so nothing is lost by using plain URLs there. */
+  var CAN_FETCH = typeof window.fetch === 'function' && !!window.URL &&
+    typeof URL.createObjectURL === 'function' && location.protocol !== 'file:';
+
   function boot() {
     /* `const DOOM = {...}` in a classic script creates a script-scoped binding,
        NOT a property of window — so read it as a bare identifier first. */
@@ -496,6 +515,7 @@
     if (config.title) document.title = config.title;
     if (config.background) document.body.style.background = config.background;
     if (typeof config.maxConcurrent === 'number') maxConcurrent = config.maxConcurrent;
+    setupPreload();
 
     vertical = (config.scroll || 'vertical') !== 'horizontal';
     if (config.scroll && config.scroll !== 'vertical' && config.scroll !== 'horizontal') {
@@ -519,6 +539,7 @@
 
     if (config.bed && config.bed.src) buildBed(config.bed);
 
+    pumpPreload();
     observe();
     buildSplash();
     if (DEBUG) buildHud();
@@ -660,6 +681,7 @@
         });
         el.appendChild(v);
         layer.media = v;
+        registerAsset(cfg.src, 'video', layer, slideIndex);
         break;
 
       case 'image':
@@ -674,6 +696,8 @@
             'Check the filename and that it sits inside your media folder.');
         });
         el.appendChild(img);
+        layer.img = img;
+        registerAsset(cfg.src, 'image', layer, slideIndex);
         break;
 
       case 'audio':
@@ -688,6 +712,7 @@
         });
         el.appendChild(a);
         layer.media = a;
+        registerAsset(cfg.src, 'audio', layer, slideIndex);
         break;
 
       case 'text':
@@ -767,7 +792,6 @@
     var a = document.createElement('audio');
     a.loop = cfg.loop !== false;
     a.preload = 'auto';
-    a.src = cfg.src;
     a.addEventListener('error', function () {
       fail('Could not load the audio bed "' + cfg.src + '".', 'Check the filename and folder.');
     });
@@ -782,6 +806,7 @@
       rateNow: 1, lastRate: null,
       cssFx: [], mediaFx: [], audioFx: []
     };
+    registerAsset(cfg.src, 'audio', bedLayer, -1);
     applyPitchPref(a, bedLayer.scrollRate ? bedLayer.scrollRate.pitch : true);
     a.addEventListener('loadedmetadata', function () {
       applyPitchPref(a, bedLayer.scrollRate ? bedLayer.scrollRate.pitch : true);
@@ -792,6 +817,151 @@
       else if (all[i].kind === 'media') bedLayer.mediaFx.push(all[i]);
       else fail('Effect "' + all[i].fx + '" cannot be used on the audio bed.', 'The bed only takes audio effects.');
     }
+  }
+
+  /* ----------------------------------------------------------- preloading --- */
+  /* Media is downloaded ahead of the viewer, nearest slide first, and video and
+     audio are then played from memory (a blob: URL) rather than from the server.
+     Two reasons. A clip that is already here cannot stall. And a blob can be
+     seeked on ANY host — a <video> pointed at a plain URL can only seek if the
+     server answers Range requests, which a surprising number of static hosts
+     do not, and Safari will not play such a file at all.
+
+     An asset is 'idle' until its download starts, 'loading' while it runs, then
+     'ready' (blob in hand, or image decoded) or 'direct' (use the plain URL, the
+     way a page normally would — the fallback for everything that goes wrong). */
+
+  function setupPreload() {
+    preloadOn = config.preload !== false && CAN_FETCH;
+
+    var mb = PRELOAD_BUDGET_MB;
+    var coarse = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+    if (coarse || (navigator.deviceMemory && navigator.deviceMemory <= 4)) mb = PRELOAD_BUDGET_SMALL_MB;
+    /* Someone who has asked their browser to save data gets the opening slides
+       and nothing they have not scrolled to. */
+    if (navigator.connection && navigator.connection.saveData) mb = 0;
+    if (config.preloadBudget !== undefined) {
+      if (typeof config.preloadBudget === 'number' && config.preloadBudget >= 0) mb = config.preloadBudget;
+      else fail('"preloadBudget" must be a number of megabytes.', 'For example  preloadBudget: 100');
+    }
+    preloadBudget = mb * 1024 * 1024;
+  }
+
+  function registerAsset(url, kind, layer, slideIndex) {
+    var a = assets[url];
+    if (!a) {
+      a = assets[url] = {
+        url: url, kind: kind, state: 'idle', blobUrl: null, bytes: 0,
+        layers: [], slides: [], opening: false, scrub: false, urgent: false, waiters: []
+      };
+      /* No blobs to be had: every clip just uses its URL. Images never needed one. */
+      if (kind !== 'image' && !CAN_FETCH) a.state = 'direct';
+      assetList.push(a);
+    }
+    a.layers.push(layer);
+    a.slides.push(slideIndex);
+    if (slideIndex < PRELOAD_OPENING) a.opening = true;
+    if (layer.playWhen === 'scrub') a.scrub = true;
+    layer.asset = a;
+  }
+
+  /* How far an asset is from where the viewer is, in slides. Slides behind them
+     count double, so the piece loads in the direction it is read. */
+  function assetDistance(a) {
+    var best = Infinity;
+    for (var i = 0; i < a.slides.length; i++) {
+      var d = a.slides[i] - currentIndex;
+      if (a.slides[i] < 0) d = -1;          // the bed: before everything
+      else if (d < 0) d = -d * 2;
+      if (d < best) best = d;
+    }
+    return best;
+  }
+
+  function pumpPreload() {
+    if (!preloadOn) return;
+    /* Someone is looking at a clip that is still on its way. Everything else
+       can wait rather than share the connection with it. */
+    for (var u = 0; u < assetList.length; u++) {
+      if (assetList[u].urgent && assetList[u].state === 'loading') return;
+    }
+    while (preloadActive < PRELOAD_PARALLEL) {
+      var next = null, nextD = Infinity;
+      for (var i = 0; i < assetList.length; i++) {
+        var a = assetList[i];
+        if (a.state !== 'idle') continue;
+        if (!a.opening && preloadBytes >= preloadBudget) continue;
+        var d = assetDistance(a);
+        if (d < nextD) { next = a; nextD = d; }
+      }
+      if (!next) return;
+      loadAsset(next);
+    }
+  }
+
+  function loadAsset(a) {
+    a.state = 'loading';
+    preloadActive++;
+
+    if (a.kind === 'image') {
+      /* The <img> is already in the page waiting on loading="lazy". Telling it
+         to stop waiting is the whole preload — one request, nothing to swap. */
+      var left = a.layers.length;
+      var one = function () { if (--left === 0) finishAsset(a, 'ready'); };
+      for (var i = 0; i < a.layers.length; i++) {
+        var img = a.layers[i].img;
+        if (img.complete) { one(); continue; }
+        img.addEventListener('load', one);
+        img.addEventListener('error', one);
+        img.loading = 'eager';
+      }
+      return;
+    }
+
+    fetch(a.url).then(function (res) {
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      if (/bytes/i.test(res.headers.get('Accept-Ranges') || '')) hostRanges = true;
+      return res.blob();
+    }).then(function (blob) {
+      /* Some hosts answer a missing file with their HTML front page and a 200.
+         Hand that to the element as a URL so the usual error gets reported. */
+      if (/^text\//.test(blob.type)) { finishAsset(a, 'direct'); return; }
+      /* Safari will not play a blob that does not say what it is. */
+      if (!blob.type || blob.type === 'application/octet-stream') {
+        var mime = mimeFor(a.url, a.kind);
+        if (mime) blob = blob.slice(0, blob.size, mime);
+      }
+      a.blobUrl = URL.createObjectURL(blob);
+      a.bytes = blob.size;
+      preloadBytes += blob.size;
+      finishAsset(a, 'ready');
+    }, function () {
+      finishAsset(a, 'direct');
+    });
+  }
+
+  function finishAsset(a, state) {
+    a.state = state;
+    preloadActive--;
+    var waiters = a.waiters;
+    a.waiters = [];
+    for (var i = 0; i < waiters.length; i++) waiters[i](a);
+    if (splashRefresh) splashRefresh();
+    pumpPreload();
+  }
+
+  var MIME = {
+    mp4: 'video/mp4', m4v: 'video/mp4', mov: 'video/quicktime', webm: 'video/webm', ogv: 'video/ogg',
+    mp3: 'audio/mpeg', m4a: 'audio/mp4', aac: 'audio/aac', ogg: 'audio/ogg', oga: 'audio/ogg',
+    opus: 'audio/ogg', wav: 'audio/wav', flac: 'audio/flac'
+  };
+
+  function mimeFor(url, kind) {
+    var m = /\.([a-z0-9]+)(?:[?#].*)?$/i.exec(url);
+    var mime = m && MIME[m[1].toLowerCase()];
+    if (!mime) return '';
+    /* .webm and .mp4 hold either; say the one this layer is going to play. */
+    return mime.replace(/^(video|audio)\//, kind + '/');
   }
 
   /* -------------------------------------------------------- near tracking --- */
@@ -843,7 +1013,7 @@
         if (m.currentTime === 0) m.currentTime = 0.001;
       });
     }
-    if (!started || layer.primed) return;
+    if (!started || layer.primed || !m.getAttribute('src')) return;
     layer.primed = true;
     var p = m.play();
     if (p && p.then) p.then(function () { m.pause(); }, function () {});
@@ -874,7 +1044,43 @@
     overlay.appendChild(inner);
     document.body.appendChild(overlay);
 
+    /* Hold the door until the opening slides are actually here, so the first
+       thing anyone sees is the piece and not a black rectangle filling in. */
+    var waiting = false;
+    var waitTimer = null;
+
+    function opening() {
+      var done = 0, total = 0;
+      for (var i = 0; i < assetList.length; i++) {
+        if (!assetList[i].opening) continue;
+        total++;
+        if (assetList[i].state === 'ready' || assetList[i].state === 'direct') done++;
+      }
+      return { done: done, total: total };
+    }
+    function ready() {
+      waiting = false;
+      splashRefresh = null;
+      clearTimeout(waitTimer);
+      overlay.classList.remove('is-loading');
+      sub.textContent = s.sub || 'tap to begin';
+    }
+    function refresh() {
+      var o = opening();
+      if (o.done >= o.total) ready();
+      else sub.textContent = 'loading ' + o.done + ' / ' + o.total;
+    }
+    if (preloadOn && opening().done < opening().total) {
+      waiting = true;
+      overlay.classList.add('is-loading');
+      splashRefresh = refresh;
+      /* A slow connection must not lock anyone out. */
+      waitTimer = setTimeout(ready, SPLASH_WAIT_MS);
+      refresh();
+    }
+
     function go() {
+      if (waiting) return;
       overlay.removeEventListener('click', go);
       overlay.removeEventListener('keydown', onKey);
       start();
@@ -957,6 +1163,7 @@
       if (bedLayer) followRate(bedLayer, frameDt);
     }
 
+    var mostVisible = 0;
     for (var i = 0; i < slides.length; i++) {
       var s = slides[i];
       if (!s.near) continue;
@@ -981,6 +1188,8 @@
       /* For a slide taller than the screen this saturates at 1 for the whole
          pin, which is what we want — a pinned slide really is fully on screen. */
       s.visibility = Math.max(0, visEnd - visStart) / Math.min(size, viewSize || 1);
+      /* The preloader fetches outwards from wherever the viewer is. */
+      if (s.visibility > mostVisible) { mostVisible = s.visibility; currentIndex = i; }
 
       for (var j = 0; j < s.layers.length; j++) {
         var L = s.layers[j];
@@ -1086,17 +1295,63 @@
 
   /* ------------------------------------------------- media play / pause ----- */
 
-  function ensureSrc(layer) {
-    /* Sources are attached lazily so distant clips never start downloading. */
-    if (!layer.media.getAttribute('src')) {
-      layer.media.preload = 'auto';
-      layer.media.setAttribute('src', layer.cfg.src);
-      applyPitchPref(layer.media, layer.scrollRate ? layer.scrollRate.pitch : true);
+  function attachSrc(layer, src) {
+    layer.media.preload = 'auto';
+    layer.media.setAttribute('src', src);
+    applyPitchPref(layer.media, layer.scrollRate ? layer.scrollRate.pitch : true);
+  }
+
+  /* Give a layer's element something to play, preferring the downloaded blob.
+     Returns false when the answer is "not yet" — the blob is on its way and the
+     caller should simply ask again. `now` means it cannot wait. */
+  function ensureSrc(layer, now) {
+    if (layer.media.getAttribute('src')) return true;
+    var a = layer.asset;
+
+    if (a.state === 'ready') { attachSrc(layer, a.blobUrl); return true; }
+    if (a.state === 'direct') { attachSrc(layer, a.url); return true; }
+
+    if (layer.playWhen === 'scrub') {
+      /* A scrubbing clip needs the blob, so fetch it ahead of everything else. */
+      a.urgent = true;
+      if (a.state === 'idle') loadAsset(a);
+      if (!layer.awaitingBlob) {
+        layer.awaitingBlob = true;
+        a.waiters.push(function () { scrubArrived(layer); });
+      }
+      /* On a host that can seek, the plain URL scrubs perfectly well in the
+         meantime. On one that cannot it would only be a second download of the
+         same file, racing the one that matters — so there, show nothing yet. */
+      if (!hostRanges) return false;
+      attachSrc(layer, a.url);
+      return true;
     }
+
+    /* Already downloading: a second request for the same file would only slow
+       down the first. */
+    if (a.state === 'loading' && !now) return false;
+
+    /* The viewer got here before the preloader did, so stream it the ordinary
+       way rather than make them wait for a whole file. */
+    if (a.state === 'idle' && !a.scrub) a.state = 'direct';
+    attachSrc(layer, a.url);
+    return true;
+  }
+
+  function scrubArrived(layer) {
+    var a = layer.asset;
+    /* Changing src reloads the element. applyScrub() puts the playhead back
+       where the scroll says it belongs as soon as the duration is known. */
+    if (a.state === 'ready') attachSrc(layer, a.blobUrl);
+    else if (!layer.media.getAttribute('src')) attachSrc(layer, a.url);   // download failed
+    layer.primed = false;
+    primeScrub(layer);
   }
 
   function play(layer) {
-    ensureSrc(layer);
+    /* The bed starts inside the splash tap and that gesture cannot be had
+       again, so it takes whatever is available this instant. */
+    if (!ensureSrc(layer, layer === bedLayer)) return;
     if (!layer.media.paused) return;
     var promise = layer.media.play();
     if (promise && promise.catch) {
@@ -1189,6 +1444,12 @@
       'overall  ' + documentProgress().toFixed(3),
       'scroll   ' + scrollVel.toFixed(2) + ' screens/s' +
         (bedLayer && bedLayer.scrollRate ? '   bed x' + bedLayer.rateNow.toFixed(2) : '')];
+    var got = 0;
+    for (var a = 0; a < assetList.length; a++) {
+      if (assetList[a].state === 'ready') got++;
+    }
+    lines.push('preload  ' + got + '/' + assetList.length + '  ' +
+      (preloadBytes / 1048576).toFixed(1) + ' MB' + (preloadOn ? '' : '  (off)'));
     for (var i = 0; i < slides.length; i++) {
       var s = slides[i];
       if (!s.near) continue;

@@ -144,7 +144,9 @@ detects a cut, so the spacing ends up uneven and some seeks are slow. The full
 recipe is explained in [CONFIG.md](CONFIG.md#preparing-a-clip-to-scrub).
 
 The framework only lets a few clips decode at once, but it can't rescue a
-500 MB file. Keep the whole folder under a couple hundred megabytes.
+500 MB file. It downloads ahead of the viewer until it is holding about 150 MB
+(60 MB on a phone); past that, clips load as you reach them and can stutter on
+a slow connection. Keep the whole folder under that if you can.
 
 ---
 
@@ -184,13 +186,11 @@ Any webserver works — no special configuration, no server-side anything. Drop
 it on your web space, a static host, or hand in the folder as a zip. The person
 opening it needs nothing but a browser.
 
-> **If you are scrubbing video, the server has to support byte ranges.** Real
-> hosts all do, so your uploaded piece is fine. But the quick local server
-> people reach for first, `python3 -m http.server`, does **not** — and the
-> symptom is nasty, because the clip loads and shows its first frame and simply
-> refuses to seek, so scrubbing looks broken when your config is correct. Use
-> `npx serve` or `php -S localhost:8000` locally instead, or just test scrubbing
-> on the real upload.
+The piece downloads its own media ahead of whoever is watching and plays it
+from memory, so it behaves the same on every host — including the bare-bones
+ones (`python3 -m http.server`, some static hosts) that cannot seek inside a
+video file. The title screen says `loading` until the first couple of slides
+have arrived, then `tap to begin`.
 
 Before you hand in:
 

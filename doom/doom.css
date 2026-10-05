@@ -81,6 +81,23 @@ html, body {
 .doom-track.is-vertical.is-carousel.has-hold   { scroll-snap-type: y proximity; }
 .doom-track.is-horizontal.is-carousel.has-hold { scroll-snap-type: x proximity; }
 
+/* -------------------------------------------------------------- reverse --- */
+/* scroll: "up" / "left". The slides are laid out backwards, so slide 1 sits at
+   the far end — and a reversed flex container starts scrolled to that end on
+   its own, with no script having to put it there. */
+.doom-track.is-vertical.is-reverse   { display: flex; flex-direction: column-reverse; }
+.doom-track.is-horizontal.is-reverse { flex-direction: row-reverse; }
+.is-vertical.is-reverse > .doom-slide { flex-shrink: 0; }   /* keep the heights above */
+
+/* A hold slide is reached from its far end here, so the holder has to wait at
+   that end and stick to the opposite edge — otherwise you would scroll through
+   the whole empty runway before anything appeared. */
+.is-reverse > .doom-slide.is-hold { display: flex; justify-content: flex-end; }
+.is-vertical.is-reverse > .doom-slide.is-hold { flex-direction: column; }
+.is-reverse > .doom-slide.is-hold > .doom-hold { flex: none; }
+.is-vertical.is-reverse   > .doom-slide.is-hold > .doom-hold { top: auto;  bottom: 0; }
+.is-horizontal.is-reverse > .doom-slide.is-hold > .doom-hold { left: auto; right: 0; }
+
 /* ---------------------------------------------------------------- layer --- */
 .doom-layer {
   position: absolute;

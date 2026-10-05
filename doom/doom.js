@@ -23,7 +23,16 @@
   var SPLASH_WAIT_MS = 8000;     // then let them in whether it has loaded or not
   var PLAY_MODES = ['inview', 'always', 'once', 'scrub', 'never', 'manual'];
 
-  var SCROLL_RATE_KEYS = ['normal', 'min', 'max', 'smooth', 'pitch'];
+  var SCROLL_DIRS = {
+    vertical:   { vertical: true,  reverse: false },
+    down:       { vertical: true,  reverse: false },
+    up:         { vertical: true,  reverse: true },
+    horizontal: { vertical: false, reverse: false },
+    right:      { vertical: false, reverse: false },
+    left:       { vertical: false, reverse: true }
+  };
+
+  var SCROLL_RATE_KEYS =['normal', 'min', 'max', 'smooth', 'pitch'];
   var HOLD_MAX = 20;             // screens. Past this someone is scrolling for a minute
   var VEL_ALPHA = 0.3;           // fixed pre-smoothing that kills single-frame spikes
 
@@ -463,6 +472,7 @@
   var bedLayer = null;
   var anyHold = false;           // true once any slide asks to pin itself
   var vertical = true;
+  var reverse = false;           // true when the piece runs up, or to the left
   var started = false;
   var maxConcurrent = DEFAULT_MAX_CONCURRENT;
   var hudEl = null;
@@ -517,10 +527,16 @@
     if (typeof config.maxConcurrent === 'number') maxConcurrent = config.maxConcurrent;
     setupPreload();
 
-    vertical = (config.scroll || 'vertical') !== 'horizontal';
-    if (config.scroll && config.scroll !== 'vertical' && config.scroll !== 'horizontal') {
-      fail('Unknown scroll direction "' + config.scroll + '".', 'Use "vertical" or "horizontal".');
+    /* "up" and "left" are the same two axes run backwards: the piece opens on
+       slide 1 at the far end and you scroll towards the start of the page. */
+    var dir = SCROLL_DIRS[config.scroll || 'vertical'];
+    if (!dir) {
+      fail('Unknown scroll direction "' + config.scroll + '".',
+        'Use "vertical", "horizontal", "up" or "left".');
+      dir = SCROLL_DIRS.vertical;
     }
+    vertical = dir.vertical;
+    reverse = dir.reverse;
     var carousel = config.mode === 'carousel';
     if (config.mode && config.mode !== 'carousel' && config.mode !== 'continuous') {
       fail('Unknown mode "' + config.mode + '".', 'Use "continuous" or "carousel".');
@@ -528,7 +544,7 @@
 
     track = document.createElement('div');
     track.className = 'doom-track ' + (vertical ? 'is-vertical' : 'is-horizontal') +
-      (carousel ? ' is-carousel' : '');
+      (reverse ? ' is-reverse' : '') + (carousel ? ' is-carousel' : '');
     document.body.appendChild(track);
 
     for (var i = 0; i < config.slides.length; i++) buildSlide(config.slides[i], i);
@@ -1171,6 +1187,9 @@
       var r = s.el.getBoundingClientRect();
       var start = vertical ? r.top - trackRect.top : r.left - trackRect.left;
       var size = vertical ? r.height : r.width;
+      /* A reversed piece brings slides in from the opposite edge. Mirroring the
+         position here keeps everything below reading 0 = entering, 1 = leaving. */
+      if (reverse) start = viewSize - start - size;
 
       /* 0 when the slide is just off the leading edge, 1 when it has just
          left the trailing edge, 0.5 when perfectly centred. */
@@ -1227,7 +1246,8 @@
       ? track.scrollHeight - track.clientHeight
       : track.scrollWidth - track.clientWidth;
     if (max <= 0) return 0;
-    return clamp((vertical ? track.scrollTop : track.scrollLeft) / max, 0, 1);
+    /* A reversed track counts from zero downwards into negative numbers. */
+    return clamp(Math.abs(vertical ? track.scrollTop : track.scrollLeft) / max, 0, 1);
   }
 
   /* ------------------------------------------------------- applying effects -- */
@@ -1439,6 +1459,7 @@
 
   function updateHud() {
     var lines = ['doom debug — ' + (vertical ? 'vertical' : 'horizontal') +
+      (reverse ? (vertical ? ' (up)' : ' (left)') : '') +
       ' / ' + (config.mode === 'carousel' ? 'carousel' : 'continuous') +
       (anyHold ? ' / pinned' : ''),
       'overall  ' + documentProgress().toFixed(3),

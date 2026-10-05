@@ -100,7 +100,7 @@ const DOOM = { ...these... };
 | Key | Values | Default | What it does |
 |---|---|---|---|
 | `title` | text | `"doom scroll"` | browser tab title |
-| `scroll` | `"vertical"` \| `"horizontal"` | `"vertical"` | which way the piece runs |
+| `scroll` | `"vertical"` \| `"horizontal"` \| `"up"` \| `"left"` | `"vertical"` | which way the piece runs — see [scroll direction](#scroll-direction) |
 | `mode` | `"continuous"` \| `"carousel"` | `"continuous"` | `carousel` snaps one slide at a time; `continuous` scrolls freely |
 | `background` | any CSS colour | `"#000"` | behind everything |
 | `fit` | `"cover"` \| `"contain"` | `"cover"` | `cover` fills the screen and crops; `contain` fits the whole frame in |
@@ -111,6 +111,28 @@ const DOOM = { ...these... };
 | `bed` | object | — | one soundtrack under the whole piece, see below |
 | `defaults` | object | — | `fit` and `playWhen` applied to every layer unless overridden |
 | `slides` | array | **required** | your piece |
+
+### Scroll direction
+
+| Value | The piece opens… | …and you scroll |
+|---|---|---|
+| `"vertical"` | at the top | down |
+| `"horizontal"` | at the left | right |
+| `"up"` | at the bottom | up |
+| `"left"` | at the right | left |
+
+`"up"` and `"left"` are the same piece run backwards: slide 1 is still the first
+entry in `slides`, it just sits at the far end, and each new slide arrives from
+the top (or the left) instead.
+
+Effects need no changes. `0` still means a slide is just arriving and `1` that
+it has just left, so fades, scrubbing, `hold` and the `bed` all behave the same
+in every direction. The one thing to look at is `translateX` / `translateY`:
+those values are used exactly as written, so a parallax tuned for scrolling down
+may want its `from` and `to` swapped.
+
+On a keyboard a reversed piece is advanced with the up arrow or Page Up. Space
+and Page Down push the other way, so they do nothing at the start.
 
 ### `splash`
 

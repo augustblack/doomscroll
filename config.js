@@ -3,7 +3,7 @@ const DOOM = {
 
   title: "doom scroll — demo by August",
 
-  scroll: "vertical",       // "vertical" or "horizontal"
+  scroll: "vertical",       // "vertical", "horizontal", "up" or "left"
   mode: "carousel",       // "continuous" (free) or "carousel" (snaps)
   background: "#000",
   fit: "cover",             // "cover" fills the screen, "contain" fits inside

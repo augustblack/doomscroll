@@ -60,7 +60,7 @@ to change its shape:
 ```js
 const DOOM = {
   title: "my piece",
-  scroll: "vertical",        // or "horizontal"
+  scroll: "vertical",        // or "horizontal", "up", "left"
   mode: "continuous",        // or "carousel", which snaps one slide at a time
 
   splash: { text: "MY PIECE", sub: "tap to begin" },
